@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการสิ่งที่ต้องทำ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+        }
+    </style>
+</head>
+<body class="p-6">
+
+    <div class="bg-white p-8 rounded-lg shadow-md max-w-4xl mx-auto">
+        <header class="flex items-center justify-between pb-6 border-b border-gray-200">
+            <h1 class="text-4xl font-bold">สิ่งที่ต้องทำ</h1>
+            <div class="space-x-2">
+                <button id="reset-btn" class="bg-red-500 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-red-600 transition-colors">
+                    รีเซ็ต
+                </button>
+                <button id="add-item-btn" class="bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-blue-600 transition-colors">
+                    เพิ่มรายการ
+                </button>
+                <div class="flex flex-col items-center">
+                    <a href="#" id="report-link" class="text-purple-500 hover:text-purple-700 transition-colors">
+                        สร้างรายงาน
+                    </a>
+                </div>
+            </div>
+        </header>
+
+        <div class="mt-8 space-y-8" id="item-list">
+            <!-- Items will be injected here by JavaScript -->
+        </div>
+
+    </div>
+
+    <!-- Modal for adding/editing items -->
+    <div id="modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+            <h2 id="modal-title" class="text-2xl font-bold mb-4">เพิ่มรายการใหม่</h2>
+            <form id="item-form" class="space-y-4">
+                <div>
+                    <label for="item-title" class="block text-sm font-medium text-gray-700">หัวข้อ:</label>
+                    <input type="text" id="item-title" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                </div>
+                <div>
+                    <label for="item-date" class="block text-sm font-medium text-gray-700">วันที่:</label>
+                    <input type="date" id="item-date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                </div>
+                <div>
+                    <label for="item-author" class="block text-sm font-medium text-gray-700">ชื่อผู้บันทึก:</label>
+                    <input type="text" id="item-author" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="close-modal-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
+                        ยกเลิก
+                    </button>
+                    <button type="submit" class="bg-green-500 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-green-600 transition-colors">
+                        บันทึก
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal for Delete -->
+    <div id="delete-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+            <h2 class="text-2xl font-bold mb-4">ยืนยันการลบ</h2>
+            <p>คุณแน่ใจหรือไม่ที่จะลบรายการนี้?</p>
+            <div class="flex justify-end space-x-2 mt-4">
+                <button id="cancel-delete-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-lg hover:bg-gray-300 transition-colors">
+                    ยกเลิก
+                </button>
+                <button id="confirm-delete-btn" class="bg-red-500 text-white font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-red-600 transition-colors">
+                    ลบ
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const addItemBtn = document.getElementById('add-item-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const modal = document.getElementById('modal');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const itemForm = document.getElementById('item-form');
+            const itemList = document.getElementById('item-list');
+            const modalTitle = document.getElementById('modal-title');
+            const itemTitleInput = document.getElementById('item-title');
+            const itemDateInput = document.getElementById('item-date');
+            const itemAuthorInput = document.getElementById('item-author');
+            const reportLink = document.getElementById('report-link');
+            
+            const deleteModal = document.getElementById('delete-modal');
+            const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+            const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+
+            let editingIndex = -1;
+            let itemToDeleteIndex = -1;
+            let items = [];
+
+            const renderItems = () => {
+                itemList.innerHTML = '';
+                if (items.length === 0) {
+                    itemList.innerHTML = '<p class="text-gray-500 text-center">ยังไม่มีสิ่งที่ต้องทำ</p>';
+                    return;
+                }
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                const yesterday = new Date(today);
+                yesterday.setDate(today.getDate() - 1);
+
+                const tomorrow = new Date(today);
+                tomorrow.setDate(today.getDate() + 1);
+
+                const incompleteItems = items.filter(item => !item.completed);
+                const completedItems = items.filter(item => item.completed);
+                
+                const overdueItems = incompleteItems.filter(item => {
+                    const itemDate = new Date(item.date);
+                    itemDate.setHours(0, 0, 0, 0);
+                    return itemDate.getTime() < today.getTime();
+                }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                const todayItems = incompleteItems.filter(item => {
+                    const itemDate = new Date(item.date);
+                    itemDate.setHours(0, 0, 0, 0);
+                    return itemDate.getTime() === today.getTime();
+                }).sort((a, b) => new Date(a.date) - new Date(b.date));
+                
+                const tomorrowItems = incompleteItems.filter(item => {
+                    const itemDate = new Date(item.date);
+                    itemDate.setHours(0, 0, 0, 0);
+                    return itemDate.getTime() === tomorrow.getTime();
+                }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                const upcomingItems = incompleteItems.filter(item => {
+                    const itemDate = new Date(item.date);
+                    itemDate.setHours(0, 0, 0, 0);
+                    return itemDate.getTime() > tomorrow.getTime();
+                }).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                const createSection = (title, data, containerId, isCompleted = false) => {
+                    if (data.length > 0) {
+                        const sectionHtml = `
+                            <h2 class="text-2xl font-bold text-gray-700 mt-6">${title}</h2>
+                            <div class="space-y-4" id="${containerId}"></div>
+                        `;
+                        itemList.insertAdjacentHTML('beforeend', sectionHtml);
+                        const container = document.getElementById(containerId);
+                        data.forEach((item, index) => {
+                             const itemElement = document.createElement('div');
+                             itemElement.classList.add('flex', 'items-center', 'justify-between', 'p-4', 'rounded-lg', 'shadow-sm', 'border');
+                             if (isCompleted) {
+                                itemElement.classList.add('bg-green-100', 'border-green-200', 'line-through', 'text-gray-500');
+                             } else {
+                                itemElement.classList.add('bg-gray-100', 'border-gray-200');
+                             }
+                             itemElement.innerHTML = `
+                                 <div>
+                                     <p class="text-lg font-medium">${item.title}</p>
+                                     <p class="text-sm">วันที่: ${item.date} (${item.createdAt})</p>
+                                     <p class="text-xs text-gray-500">ผู้บันทึก: ${item.author || 'ไม่ระบุ'}</p>
+                                     ${isCompleted ? `<p class="text-xs text-gray-500">ทำเสร็จเมื่อ: ${item.completedAt}</p>` : ''}
+                                 </div>
+                                 <div class="space-x-2">
+                                     ${!isCompleted ? `
+                                        <button class="complete-btn bg-green-500 text-white py-1 px-3 rounded-md text-sm hover:bg-green-600 transition-colors" data-index="${items.indexOf(item)}">
+                                            ทำแล้ว
+                                        </button>
+                                     ` : ''}
+                                     ${isCompleted ? `
+                                        <button class="restore-btn bg-blue-500 text-white py-1 px-3 rounded-md text-sm hover:bg-blue-600 transition-colors" data-index="${items.indexOf(item)}">
+                                            คืน
+                                        </button>
+                                     ` : ''}
+                                     ${!isCompleted ? `
+                                        <button class="edit-btn bg-yellow-500 text-white py-1 px-3 rounded-md text-sm hover:bg-yellow-600 transition-colors" data-index="${items.indexOf(item)}">
+                                            แก้ไข
+                                        </button>
+                                     ` : ''}
+                                     <button class="delete-btn bg-red-500 text-white py-1 px-3 rounded-md text-sm hover:bg-red-600 transition-colors" data-index="${items.indexOf(item)}">
+                                         ลบ
+                                     </button>
+                                 </div>
+                             `;
+                             container.appendChild(itemElement);
+                        });
+                    }
+                };
+                
+                createSection('เกินกำหนด', overdueItems, 'overdue-list');
+                createSection('วันนี้', todayItems, 'today-list');
+                createSection('พรุ่งนี้', tomorrowItems, 'tomorrow-list');
+                createSection('ในอนาคต', upcomingItems, 'upcoming-list');
+                createSection('สิ่งที่ทำแล้ว', completedItems, 'completed-list', true);
+            };
+
+            const showModal = (modalElement) => {
+                modalElement.classList.remove('hidden');
+            };
+
+            const hideModal = (modalElement) => {
+                modalElement.classList.add('hidden');
+            };
+
+            addItemBtn.addEventListener('click', () => {
+                modalTitle.textContent = 'เพิ่มรายการใหม่';
+                itemForm.reset();
+                editingIndex = -1;
+                showModal(modal);
+            });
+
+            closeModalBtn.addEventListener('click', () => hideModal(modal));
+
+            itemForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const title = itemTitleInput.value;
+                const date = itemDateInput.value;
+                const author = itemAuthorInput.value;
+
+                if (!title || !date) {
+                    const messageBox = document.createElement('div');
+                    messageBox.classList.add('fixed', 'bottom-4', 'left-1/2', '-translate-x-1/2', 'bg-red-500', 'text-white', 'py-2', 'px-4', 'rounded-lg', 'shadow-lg', 'z-50');
+                    messageBox.textContent = 'กรุณากรอกหัวข้อและวันที่';
+                    document.body.appendChild(messageBox);
+                    setTimeout(() => messageBox.remove(), 3000);
+                    return;
+                }
+
+                if (editingIndex === -1) {
+                    const now = new Date();
+                    const createdAt = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                    items.push({ title, date, author, createdAt, completed: false });
+                } else {
+                    items[editingIndex] = { ...items[editingIndex], title, date, author };
+                }
+
+                renderItems();
+                hideModal(modal);
+            });
+
+            itemList.addEventListener('click', (e) => {
+                const target = e.target;
+
+                if (target.classList.contains('edit-btn')) {
+                    const index = target.getAttribute('data-index');
+                    editingIndex = parseInt(index);
+                    const item = items[editingIndex];
+                    
+                    modalTitle.textContent = 'แก้ไขรายการ';
+                    itemTitleInput.value = item.title;
+                    itemDateInput.value = item.date;
+                    itemAuthorInput.value = item.author;
+                    
+                    showModal(modal);
+                }
+
+                if (target.classList.contains('delete-btn')) {
+                    itemToDeleteIndex = parseInt(target.getAttribute('data-index'));
+                    showModal(deleteModal);
+                }
+
+                if (target.classList.contains('complete-btn')) {
+                    const index = target.getAttribute('data-index');
+                    const item = items[parseInt(index)];
+                    item.completed = true;
+                    const now = new Date();
+                    item.completedAt = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+                    renderItems();
+                }
+
+                if (target.classList.contains('restore-btn')) {
+                    const index = target.getAttribute('data-index');
+                    items[parseInt(index)].completed = false;
+                    renderItems();
+                }
+            });
+
+            confirmDeleteBtn.addEventListener('click', () => {
+                if (itemToDeleteIndex !== -1) {
+                    items.splice(itemToDeleteIndex, 1);
+                    renderItems();
+                }
+                hideModal(deleteModal);
+                itemToDeleteIndex = -1;
+            });
+
+            cancelDeleteBtn.addEventListener('click', () => {
+                hideModal(deleteModal);
+                itemToDeleteIndex = -1;
+            });
+
+            resetBtn.addEventListener('click', () => {
+                items = [];
+                renderItems();
+            });
+
+            reportLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                const allItems = items.sort((a,b) => new Date(a.date) - new Date(b.date));
+                
+                const data = allItems.map(item => ({
+                    'หัวข้อ': item.title,
+                    'วันที่': item.date,
+                    'ผู้บันทึก': item.author || 'ไม่ระบุ',
+                    'เวลาที่สร้าง': item.createdAt,
+                    'สถานะ': item.completed ? 'ทำเสร็จแล้ว' : 'ยังไม่เสร็จ',
+                    'เวลาที่ทำเสร็จ': item.completedAt || ''
+                }));
+                
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "รายงานสิ่งที่ต้องทำ");
+                XLSX.writeFile(wb, "รายงานสิ่งที่ต้องทำ.xlsx");
+            });
+            
+            renderItems();
+        });
+    </script>
+
+</body>
+</html>
